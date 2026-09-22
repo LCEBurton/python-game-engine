@@ -5,7 +5,8 @@ Unit tests for pressure solver methods in the fluid simulation.
 import pytest
 import numpy as np
 
-from engine.smoke_simulator.numba.kernels.pressure import jacobi_pressure_solver, gauss_seidel_pressure_solver, red_black_gauss_seidel_pressure_solver, apply_pressure_gradient
+from engine.smoke_simulator.solvers.dispatch import solve_pressure
+from engine.smoke_simulator.solvers.registry import get_solver
 
 @pytest.fixture
 def fluid_density():

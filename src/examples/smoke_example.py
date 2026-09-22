@@ -1,6 +1,6 @@
 import numpy as np
 
-from engine.smoke_simulator.numba.simulation import SmokeSimulation2D
+from engine.smoke_simulator.common.simulation import SmokeSimulation2D
 from engine.smoke_simulator.common.emitters import Emitter2D
 from tools.profiler import Profiler
 
@@ -10,7 +10,7 @@ import pygame
 
 def main():
     # Create a smoke simulation instance
-    sim = SmokeSimulation2D(width=512, height=512, cell_size=1.0, pressure_solver_method='jacobi', pressure_iterations=60)
+    sim = SmokeSimulation2D(width=512, height=512, cell_size=1.0, pressure_solver_method='rb_sor_gauss_seidel', pressure_iterations=40)
     
     # Create an emitter at the center of the domain
     emitter = Emitter2D(position=(sim.domain_width / 2, sim.domain_height / 2), 

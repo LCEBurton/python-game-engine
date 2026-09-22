@@ -12,14 +12,14 @@ def compute_divergence(velocity_u: np.ndarray, velocity_v: np.ndarray, divergenc
         divergence: 2D array to store the computed divergence values.
         cell_size: Physical size of each cell (meters).
     """
-    height, width = velocity_u.shape
-    inv_cell_size = 1.0 / (2 * cell_size)
+    height, width = divergence.shape
+    inv_cell_size = 1.0 / cell_size
 
-    for j in prange(1, height - 1):
-        for i in range(1, width - 1):
+    for j in prange(height):
+        for i in range(width):
 
             # Compute divergence using central differences
-            du_dx = (velocity_u[j, i + 1] - velocity_u[j, i - 1]) * inv_cell_size
-            dv_dy = (velocity_v[j + 1, i] - velocity_v[j - 1, i]) * inv_cell_size
+            du_dx = (velocity_u[j, i + 1] - velocity_u[j, i]) * inv_cell_size
+            dv_dy = (velocity_v[j + 1, i] - velocity_v[j, i]) * inv_cell_size
 
             divergence[j, i] = du_dx + dv_dy

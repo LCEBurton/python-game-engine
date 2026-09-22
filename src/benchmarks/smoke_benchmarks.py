@@ -2,67 +2,177 @@
 Benchmarks for different smoke simulation methods.
 """
 
-from engine.smoke_simulator.numba.simulation import SmokeSimulation2D
+from engine.smoke_simulator.common.simulation import SmokeSimulation2D
 from engine.smoke_simulator.common.emitters import Emitter2D
-from tools.profiler import Profiler
+from engine.smoke_simulator.solvers.params import SORParams
+
+import tools.profiler_plotter as profiler_plotter
 
 import numpy as np
 
-def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: int = 1000):
+results = {} # (name with params, iterations) -> list of benchmark results
+
+field_snapshots = {} # (name, iterations) -> field snapshot at frame 500
+
+
+def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: int = 1000, solver_params=None):
     """
     Run a benchmark for the specified smoke simulation method.
 
     Args:
         simulation_method (str): The simulation method to benchmark.
+        pressure_iterations (int): Number of pressure solver iterations per frame.
         num_frames (int): Number of frames to simulate.
+        solver_params: Optional solver-specific params (e.g. SORParams(omega=1.9)).
     """
-    # Create a smoke simulation instance
-    sim = SmokeSimulation2D(width=512, height=512, cell_size=1.0, 
-                            pressure_solver_method=simulation_method, pressure_iterations=pressure_iterations)
-    
-    # Create an emitter at the center of the domain
-    emitter = Emitter2D(position=(sim.domain_width / 2, sim.domain_height / 2), 
-                      radius=15.0, 
-                      shape=(sim.height, sim.width),
-                      density_value=1.0,
-                      temperature_value=15.0,
-                      velocity_value=(0.0, -5.0),  # Upward velocity
-                      approach='gaussian',
-                      numba_optimized=True)
+    sim = SmokeSimulation2D(width=512, height=512, cell_size=1.0,
+                             pressure_solver_method=simulation_method, pressure_iterations=pressure_iterations,
+                             solver_params=solver_params, debug=True)
+
+    emitter = Emitter2D(position=(sim.domain_width / 2, sim.domain_height / 2),
+                         radius=15.0,
+                         shape=(sim.height, sim.width),
+                         density_value=1.0,
+                         temperature_value=15.0,
+                         velocity_value=(0.0, -5.0),  # Upward velocity
+                         approach='gaussian',
+                         numba_optimized=True)
 
     sim.add_emitter(emitter)
 
-    profiler = Profiler()
-    profiler.start()
+    # Register a snapshot of peak divergence near the emitter at a fixed frame,
+    # so results are directly comparable across different pressure_iterations.
+    snapshot_frame = 1000
+    window = int(emitter.radius)
+    emitter_j, emitter_i = int(emitter.position[0]), int(emitter.position[1])
+
+    def get_peak_divergence_near_emitter():
+        region = sim.div_after[emitter_j - window:emitter_j + window, emitter_i - window:emitter_i + window]
+        return np.max(np.abs(region))
+
+    def get_divergence():
+        return sim.divergence
+
+    sim.profiler.register_snapshot("peak_divergence_at_frame", snapshot_frame, get_peak_divergence_near_emitter)
+
+    sim.profiler.register_field_snapshot("divergence_after_pressure", snapshot_frame, get_divergence)
+
+
     max_div = (0.0, (-1, -1))
 
-    print(f"Benchmark for {simulation_method} with {pressure_iterations} iterations:")
+    print(f"Running benchmark: {simulation_method} ({pressure_iterations} iterations)...")
 
     for frame in range(num_frames):
         sim.update(0.016)  # ~60 fps
+        sim.profiler.tick(frame)
+
         m_div = np.max(sim.divergence)
         if m_div > max_div[0]:
-            max_div = (m_div, list(map(lambda x: int(x), np.unravel_index(sim.divergence.argmax(), sim.divergence.shape))))
+            max_div = (m_div, tuple(map(int, np.unravel_index(sim.divergence.argmax(), sim.divergence.shape))))
+
+    profiler = sim.profiler
+
+    if solver_params is not None and isinstance(solver_params, SORParams):
+        simulation_name = f"{simulation_method} (omega={solver_params.omega})"
+    else:
+        simulation_name = simulation_method
+
+    if simulation_name not in results:
+        results[simulation_name] = []
+
+    results[simulation_name].append({
+        "pressure_iterations": pressure_iterations,
+        "max_divergence": max_div[0],
+        "max_divergence_index": max_div[1],
+        "peak_divergence_at_frame": profiler.get_variable_avg("peak_divergence_at_frame"),
+        "mean_divergence_before": profiler.get_variable_avg("mean_divergence_before"),
+        "mean_divergence_after": profiler.get_variable_avg("mean_divergence_after"),
+        "RMS_divergence_before": profiler.get_variable_avg("RMS_divergence_before"),
+        "RMS_divergence_after": profiler.get_variable_avg("RMS_divergence_after"),
+        "avg_pressure_solve_ms": profiler.get_checkpoint_avg_ms("pressure_solve"),
+        "avg_total_frame_ms": sum(
+            profiler.get_checkpoint_avg_ms(name) for name in (
+                "emitters", "forces", "advect_velocity", "advect_density",
+                "advect_temperature", "cooling", "dissipation", "divergence",
+                "pressure_solve", "pressure_gradient", "divergence_after_pressure",
+                "boundaries",
+            )
+        ),
+    })
+
+    field_snapshots[(simulation_name, pressure_iterations)] = sim.profiler.get_field("divergence_after_pressure")
 
 
-    sim.profiler.report()
-    print(f"Max divergence: {max_div[0]} at index {max_div[1][0]}, {max_div[1][1]}")
-    print("\n")
-
-def main():
-    # Define the simulation methods and their corresponding pressure iterations to benchmark
-    simulation_methods = [
-        ("jacobi", 20),
-        ("jacobi", 40),
-        ("jacobi", 80),
-        ("gauss_seidel", 10),
-        ("gauss_seidel", 20), 
-        ("red_black_gauss_seidel", 10),
-        ("red_black_gauss_seidel", 20)
+def print_results_table():
+    """
+    Print a formatted table summarizing benchmark results across all simulation methods.
+    """
+    headers = [
+        "Method", "Iterations", "Max Div", "Max Div Idx",
+        "Max Div at frame 500", "Mean Div (Before)", 
+        "Mean Div (After)", "RMS Div (Before)", "RMS Div (After)",
+        "Avg Pressure Solve (ms)", "Avg Frame (ms)"
     ]
 
-    for method, iterations in simulation_methods:
-        run_benchmark(method, iterations)
-    
+    rows = []
+    for method, runs in results.items():
+        for run in runs:
+            rows.append([
+                method,
+                run["pressure_iterations"],
+                f"{run['max_divergence']:.6f}",
+                str(run["max_divergence_index"]),
+                f"{run['peak_divergence_at_frame']:.6f}",
+                f"{run['mean_divergence_before']:.6f}",
+                f"{run['mean_divergence_after']:.6f}",
+                f"{run['RMS_divergence_before']:.6f}",
+                f"{run['RMS_divergence_after']:.6f}",
+                f"{run['avg_pressure_solve_ms']:.3f}",
+                f"{run['avg_total_frame_ms']:.3f}",
+            ])
+
+    col_widths = [max(len(str(row[i])) for row in ([headers] + rows)) for i in range(len(headers))]
+
+    def format_row(row):
+        return " | ".join(str(val).ljust(col_widths[i]) for i, val in enumerate(row))
+
+    separator = "-+-".join("-" * w for w in col_widths)
+
+    print("\nBenchmark Results:")
+    print(format_row(headers))
+    print(separator)
+    for row in rows:
+        print(format_row(row))
+
+
+def main():
+    simulation_methods = [
+    #    ("jacobi", 20),
+        ("jacobi", 40, None),
+        ("jacobi", 80, None),
+    #    ("gauss_seidel", 10),
+    #    ("gauss_seidel", 20),
+    #    ("red_black_gauss_seidel", 10),
+        ("rb_sor_gauss_seidel", 20, SORParams(omega=1.7)),
+        ("rb_sor_gauss_seidel", 40, SORParams(omega=1.7)),
+    #    ("rb_sor_gauss_seidel", 80),
+        ("rb_sor_gauss_seidel", 20, SORParams(omega=0.0)),  # Test with default omega
+        ("rb_sor_gauss_seidel", 40, SORParams(omega=0.0)),  # Test with default omega
+    ]
+
+
+    for method, iterations, params in simulation_methods:
+        run_benchmark(method, iterations, num_frames=1500, 
+                      solver_params=params)
+
+    print_results_table()
+
+    profiler_plotter.plot_field_comparison(
+        {f"{name} ({iterations} iters)": field_snapshots[(name, iterations)]
+         for name, iterations in field_snapshots.keys()},
+        title="Divergence After Pressure Solve at Frame 500")
+
+
 if __name__ == "__main__":
     main()
+

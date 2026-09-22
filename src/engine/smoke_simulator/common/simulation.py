@@ -1,25 +1,26 @@
 import numpy as np
 from numba import njit, prange
 
-from .kernels.advection import advect_scalar_field
-from .kernels.divergence import compute_divergence
-from .kernels.forces import apply_forces, cool_temperature
-from .kernels.pressure import jacobi_pressure_solver, apply_pressure_gradient, gauss_seidel_pressure_solver, red_black_gauss_seidel_pressure_solver
-from .kernels.boundaries import enforce_boundary_conditions
+from ..kernels.numba.advection import advect_scalar_field
+from ..kernels.numba.divergence import compute_divergence
+from ..kernels.numba.forces import apply_forces, cool_temperature
+from ..kernels.numba.boundaries import enforce_boundary_conditions
+from ..kernels.numba.pressure_gradient import apply_pressure_gradient
+
+from ..solvers.params import SolverParams
+from ..solvers.dispatch import solve_pressure
 
 from tools.profiler import Profiler
 from time import perf_counter_ns
-
-DEBUG = True
-
 
 class SmokeSimulation2D:
     """
     Real-time 2D smoke simulator using semi-Lagrangian advection
     and pressure projection for incompressibility.
     """
-    
-    def __init__(self, width=128, height=128, cell_size=1.0, pressure_solver_method='jacobi', pressure_iterations=40):
+
+    def __init__(self, width=128, height=128, cell_size=1.0, pressure_solver_method='jacobi', pressure_iterations=40, 
+                 solver_params = None, debug=False):
         """
         Initialize the 2D smoke simulation grid.
         
@@ -32,6 +33,7 @@ class SmokeSimulation2D:
         self.height = height
         self.cell_size = cell_size
         self.pressure_solver_method = pressure_solver_method
+        self.solver_params = solver_params
         
         # Physical domain size
         self.domain_width = width * cell_size
@@ -56,16 +58,18 @@ class SmokeSimulation2D:
         self.density = np.zeros(shape, dtype=np.float32)
         self.density_temp = np.zeros(shape, dtype=np.float32)
         
-        # Velocity field (staggered or cell-centered)
-        # Starting with cell-centered for simplicity
-        self.velocity_u = np.zeros(shape, dtype=np.float32)  # x-component
-        self.velocity_v = np.zeros(shape, dtype=np.float32)  # y-component
-        self.velocity_u_temp = np.zeros(shape, dtype=np.float32)
-        self.velocity_v_temp = np.zeros(shape, dtype=np.float32)
+        # Velocity fields staggered using MAC grid convention (u, v components) 
+        # Physical/cell-index space convention:
+        #   - cell (i, j) center is located at (i + 0.5, j + 0.5)
+        #   - u-face (i, j) is located at (i, j + 0.5)   -> shape (height, width + 1)
+        #   - v-face (i, j) is located at (i + 0.5, j)   -> shape (height + 1, width)
+        self.velocity_u = np.zeros((height, width + 1), dtype=np.float32)  # x-component
+        self.velocity_v = np.zeros((height + 1, width), dtype=np.float32)  # y-component
+        self.velocity_u_temp = np.zeros((height, width + 1), dtype=np.float32)
+        self.velocity_v_temp = np.zeros((height + 1, width), dtype=np.float32)
         
         # Pressure field
         self.pressure = np.zeros(shape, dtype=np.float32)
-        self.pressure_temp = np.zeros(shape, dtype=np.float32)
 
         # Temperature field (optional, for buoyancy)
         self.temperature = np.zeros(shape, dtype=np.float32)
@@ -85,7 +89,7 @@ class SmokeSimulation2D:
         # Emitters (position, radius, density_rate, velocity)
         self.emitters = []
 
-        self.debug = DEBUG
+        self.debug = debug
         self.profiler = Profiler()
         self.profiler.start()
         self.div_before = np.zeros(shape, dtype=np.float32)
@@ -194,10 +198,10 @@ class SmokeSimulation2D:
             self.profiler.store("mean_divergence_after", np.mean(np.abs(self.div_after)))
             self.profiler.store("mean_divergence_interior_before", np.mean(np.abs(self.div_before[1:-1, 1:-1])))
             self.profiler.store("mean_divergence_interior_after", np.mean(np.abs(self.div_after[1:-1, 1:-1])))
-            self.profiler.store("RMS divergence_before", np.sqrt(np.mean(self.div_before**2)))
-            self.profiler.store("RMS divergence_interior_before", np.sqrt(np.mean(self.div_before[1:-1, 1:-1]**2)))
-            self.profiler.store("RMS divergence_after", np.sqrt(np.mean(self.div_after**2)))
-            self.profiler.store("RMS divergence_interior_after", np.sqrt(np.mean(self.div_after[1:-1, 1:-1]**2)))
+            self.profiler.store("RMS_divergence_before", np.sqrt(np.mean(self.div_before**2)))
+            self.profiler.store("RMS_divergence_interior_before", np.sqrt(np.mean(self.div_before[1:-1, 1:-1]**2)))
+            self.profiler.store("RMS_divergence_after", np.sqrt(np.mean(self.div_after**2)))
+            self.profiler.store("RMS_divergence_interior_after", np.sqrt(np.mean(self.div_after[1:-1, 1:-1]**2)))
             self.profiler.checkpoint("divergence_stats")
         
         # 7. Enforce boundary conditions
@@ -249,22 +253,10 @@ class SmokeSimulation2D:
         cool_temperature(self.temperature, self.ambient_temperature, self.cooling_rate, dt)
     
     def _solve_pressure(self):
-        """Solve for pressure using Jacobi iteration."""
+        """Solve for pressure using the configured solver method."""
         self.pressure.fill(0.0)  # Reset pressure field
-        if self.pressure_solver_method == 'jacobi':
-            jacobi_pressure_solver(self.pressure, self.pressure_temp,
-                                   self.divergence, self.fluid_density,
-                                   self.cell_size, self.dt, self.pressure_iterations)
-        elif self.pressure_solver_method == 'gauss_seidel':
-            gauss_seidel_pressure_solver(self.pressure, self.divergence,
-                                            self.fluid_density, self.cell_size,
-                                            self.dt, self.pressure_iterations)
-        elif self.pressure_solver_method == 'red_black_gauss_seidel':
-            red_black_gauss_seidel_pressure_solver(self.pressure, self.divergence,
-                                                    self.fluid_density, self.cell_size,
-                                                    self.dt, self.pressure_iterations)
-        else:
-            raise ValueError(f"Unknown pressure solver method: {self.pressure_solver_method}")
+        solve_pressure(self.pressure, self.divergence, self.fluid_density,
+                        self.cell_size, self.dt, self)
  
     def _apply_pressure_gradient(self, dt):
         """Subtract pressure gradient from velocity (projection step)."""
@@ -524,9 +516,9 @@ class SmokeSimulation3D:
     def _solve_pressure(self):
         """Solve for pressure using Jacobi iteration."""
         self.pressure.fill(0.0)  # Reset pressure field
-        jacobi_pressure_solver(self.pressure, self.pressure_temp,
-                               self.divergence, self.fluid_density,
-                               self.cell_size, self.dt, self.pressure_iterations)
+        #jacobi_pressure_solver(self.pressure, self.pressure_temp,
+        #                       self.divergence, self.fluid_density,
+        #                       self.cell_size, self.dt, self.pressure_iterations)
         #gauss_seidel_pressure_solver(self.pressure, self.divergence,
         #                                self.fluid_density, self.cell_size,
         #                                self.dt, self.pressure_iterations)

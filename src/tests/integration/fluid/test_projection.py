@@ -5,8 +5,8 @@ Integration test for composition of laplacians.
 import pytest
 import numpy as np
 
-from engine.smoke_simulator.numba.kernels.pressure import apply_pressure_gradient
-from engine.smoke_simulator.numba.kernels.divergence import compute_divergence
+from engine.smoke_simulator.kernels.numba.pressure_gradient import apply_pressure_gradient
+from engine.smoke_simulator.kernels.numba.divergence import compute_divergence
 
 def test_divergence_of_pressure_gradient_quadratic(small_grid_size, fluid_density):
     """
@@ -22,8 +22,8 @@ def test_divergence_of_pressure_gradient_quadratic(small_grid_size, fluid_densit
             pressure[j, i] = i**2 + j**2  # Quadratic pressure field
 
     # Create zero velocity fields
-    velocity_u = np.zeros(small_grid_size, dtype=np.float32)
-    velocity_v = np.zeros(small_grid_size, dtype=np.float32)
+    velocity_u = np.zeros((height, width+1), dtype=np.float32)
+    velocity_v = np.zeros((height+1, width), dtype=np.float32)
 
     # Apply the pressure gradient
     apply_pressure_gradient(velocity_u, velocity_v, pressure, fluid_density, cell_size=1.0, dt=1.0)
@@ -46,8 +46,8 @@ def test_div_grad_matches_pressure_solver_laplacian(small_random_grid, fluid_den
     pressure = small_random_grid.astype(np.float32).copy()
 
     # Create zero velocity fields
-    u = np.zeros(small_random_grid.shape, dtype=np.float32)
-    v = np.zeros(small_random_grid.shape, dtype=np.float32)
+    u = np.zeros((height, width+1), dtype=np.float32)
+    v = np.zeros((height+1, width), dtype=np.float32)
     div_grad = np.zeros(small_random_grid.shape, dtype=np.float32)
 
     # Apply the pressure gradient

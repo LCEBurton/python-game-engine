@@ -4,7 +4,7 @@ Unit testing for advection calculations
 import pytest
 import numpy as np
 
-from engine.smoke_simulator.numba.kernels.advection import advect_scalar_field
+from engine.smoke_simulator.kernels.numba.advection import advect_scalar_field
 
 
 def test_zero_velocity_advection(small_grid_size):

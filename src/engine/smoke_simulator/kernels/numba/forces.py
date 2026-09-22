@@ -30,12 +30,18 @@ def compute_buoyancy_force(density: np.ndarray, density_coefficient: float, grav
         2D array of buoyancy forces.
     """
     height, width = density.shape
-    buoyancy_force = np.zeros((height, width), dtype=np.float32)
+    buoyancy_force = np.zeros((height + 1, width), dtype=np.float32)
 
     for j in prange(height):
         for i in range(width):
             # Buoyancy force is proportional to the density and acts in the opposite direction of gravity
-            buoyancy_force[j, i] = -density_coefficient * density[j, i] * gravity
+            # Clamp based on floor and ceiling
+            if j == 0 or j == height - 1:
+                d = density[j, i]
+            else:
+                d = 0.5 * (density[j - 1, i] + density[j, i])
+
+            buoyancy_force[j, i] = -density_coefficient * d * gravity
 
     return buoyancy_force
 
@@ -53,12 +59,19 @@ def compute_temperature_force(temperature: np.ndarray, ambient_termperature: flo
         2D array of temperature forces.
     """
     height, width = temperature.shape
-    temperature_force = np.zeros((height, width), dtype=np.float32)
+    temperature_force = np.zeros((height + 1, width), dtype=np.float32)
 
-    for j in prange(height):
+    for j in prange(height + 1):
         for i in range(width):
+            if j == 0:
+                t = temperature[0, i]
+            elif j == height:
+                t = temperature[height - 1, i]
+            else:
+                t = 0.5 * (temperature[j - 1, i] + temperature[j, i])
+
             # Temperature force is proportional to the difference from ambient temperature
-            temperature_force[j, i] = -buoyancy_coefficient * (temperature[j, i] - ambient_termperature)
+            temperature_force[j, i] = -buoyancy_coefficient * (t - ambient_termperature)
 
     return temperature_force
     
