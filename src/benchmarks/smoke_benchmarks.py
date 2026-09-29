@@ -6,9 +6,11 @@ from engine.smoke_simulator.common.simulation import SmokeSimulation2D
 from engine.smoke_simulator.common.emitters import Emitter2D
 from engine.smoke_simulator.solvers.params import SORParams
 
-import tools.profiler_plotter as profiler_plotter
+import tools.profiling.profiler_plotter as profiler_plotter
 
 import numpy as np
+
+import pprint
 
 results = {} # (name with params, iterations) -> list of benchmark results
 
@@ -53,9 +55,9 @@ def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: 
     def get_divergence():
         return sim.divergence
 
-    sim.profiler.register_snapshot("peak_divergence_at_frame", snapshot_frame, get_peak_divergence_near_emitter)
+    sim.profiler.snapshots.register_snapshot("peak_divergence_at_frame", snapshot_frame, get_peak_divergence_near_emitter)
 
-    sim.profiler.register_field_snapshot("divergence_after_pressure", snapshot_frame, get_divergence)
+    sim.profiler.snapshots.register_field_snapshot("divergence_after_pressure", snapshot_frame, get_divergence)
 
 
     max_div = (0.0, (-1, -1))
@@ -64,13 +66,11 @@ def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: 
 
     for frame in range(num_frames):
         sim.update(0.016)  # ~60 fps
-        sim.profiler.tick(frame)
+        sim.profiler.snapshots.tick(frame)
 
         m_div = np.max(sim.divergence)
         if m_div > max_div[0]:
             max_div = (m_div, tuple(map(int, np.unravel_index(sim.divergence.argmax(), sim.divergence.shape))))
-
-    profiler = sim.profiler
 
     if solver_params is not None and isinstance(solver_params, SORParams):
         simulation_name = f"{simulation_method} (omega={solver_params.omega})"
@@ -84,14 +84,14 @@ def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: 
         "pressure_iterations": pressure_iterations,
         "max_divergence": max_div[0],
         "max_divergence_index": max_div[1],
-        "peak_divergence_at_frame": profiler.get_variable_avg("peak_divergence_at_frame"),
-        "mean_divergence_before": profiler.get_variable_avg("mean_divergence_before"),
-        "mean_divergence_after": profiler.get_variable_avg("mean_divergence_after"),
-        "RMS_divergence_before": profiler.get_variable_avg("RMS_divergence_before"),
-        "RMS_divergence_after": profiler.get_variable_avg("RMS_divergence_after"),
-        "avg_pressure_solve_ms": profiler.get_checkpoint_avg_ms("pressure_solve"),
+        "peak_divergence_at_frame": sim.profiler.snapshots.get_value("peak_divergence_at_frame"),
+        "mean_divergence_before": sim.profiler.metrics.get_avg("mean_divergence_before"),
+        "mean_divergence_after": sim.profiler.metrics.get_avg("mean_divergence_after"),
+        "RMS_divergence_before": sim.profiler.metrics.get_avg("RMS_divergence_before"),
+        "RMS_divergence_after": sim.profiler.metrics.get_avg("RMS_divergence_after"),
+        "avg_pressure_solve_ms": sim.profiler.timing.get_avg_ms("pressure_solve"),
         "avg_total_frame_ms": sum(
-            profiler.get_checkpoint_avg_ms(name) for name in (
+            sim.profiler.timing.get_avg_ms(name) for name in (
                 "emitters", "forces", "advect_velocity", "advect_density",
                 "advect_temperature", "cooling", "dissipation", "divergence",
                 "pressure_solve", "pressure_gradient", "divergence_after_pressure",
@@ -100,7 +100,7 @@ def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: 
         ),
     })
 
-    field_snapshots[(simulation_name, pressure_iterations)] = sim.profiler.get_field("divergence_after_pressure")
+    field_snapshots[(simulation_name, pressure_iterations)] = sim.profiler.snapshots.get_field("divergence_after_pressure")
 
 
 def print_results_table():
@@ -147,17 +147,17 @@ def print_results_table():
 
 def main():
     simulation_methods = [
-    #    ("jacobi", 20),
-        ("jacobi", 40, None),
-        ("jacobi", 80, None),
+        ("jacobi", 20, None),
+    #    ("jacobi", 40, None),
+    #    ("jacobi", 80, None),
     #    ("gauss_seidel", 10),
     #    ("gauss_seidel", 20),
     #    ("red_black_gauss_seidel", 10),
         ("rb_sor_gauss_seidel", 20, SORParams(omega=1.7)),
-        ("rb_sor_gauss_seidel", 40, SORParams(omega=1.7)),
+    #    ("rb_sor_gauss_seidel", 40, SORParams(omega=1.7)),
     #    ("rb_sor_gauss_seidel", 80),
-        ("rb_sor_gauss_seidel", 20, SORParams(omega=0.0)),  # Test with default omega
-        ("rb_sor_gauss_seidel", 40, SORParams(omega=0.0)),  # Test with default omega
+    #    ("rb_sor_gauss_seidel", 20, SORParams(omega=0.0)),  # Test with default omega
+    #    ("rb_sor_gauss_seidel", 40, SORParams(omega=0.0)),  # Test with default omega
     ]
 
 
