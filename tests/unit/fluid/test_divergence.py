@@ -17,7 +17,7 @@ from engine.smoke_simulator.kernels.numba.divergence import compute_divergence
         ],
 )
 
-def test_divergence_constant_velocity(small_grid_size, velocity, cell_size):
+def test_divergence_constant_velocity(small_grid_size, face_masks, velocity, cell_size):
     """
     Test that the divergence of a constant velocity field is zero.
     """
@@ -33,13 +33,13 @@ def test_divergence_constant_velocity(small_grid_size, velocity, cell_size):
     velocity_field_v[:, :] = v  # Set vertical component
 
     # Compute divergence
-    compute_divergence(velocity_field_u, velocity_field_v, divergence, cell_size)
+    compute_divergence(velocity_field_u, velocity_field_v, divergence, face_masks[0], face_masks[1], cell_size)
 
     # Assert that the divergence is approximately zero everywhere
-    assert np.allclose(divergence.tolist(), 0.0, atol=1e-6), f"Divergence is not zero for velocity {velocity}"
+    assert np.allclose(divergence[2:-2, 2:-2], 0.0, atol=1e-6), f"Divergence is not zero for velocity ({u}, {v})"
 
 
-def test_divergence_linear_velocity(small_grid_size, cell_size):
+def test_divergence_linear_velocity(small_grid_size, face_masks, cell_size):
     """
     Test the divergence of a linear velocity field.
     For a linear velocity field, the divergence should be constant.
@@ -62,11 +62,11 @@ def test_divergence_linear_velocity(small_grid_size, cell_size):
             velocity_field_v[j, i] = j  # v = y
 
     # Compute divergence
-    compute_divergence(velocity_field_u, velocity_field_v, divergence, cell_size)
+    compute_divergence(velocity_field_u, velocity_field_v, divergence, face_masks[0], face_masks[1], cell_size)
 
-    assert np.allclose(divergence[1:-1, 1:-1].tolist(), 2.0, atol=1e-6), "Divergence is not as expected for linear velocity field"
+    assert np.allclose(divergence[2:-2, 2:-2].tolist(), 2.0, atol=1e-6), "Divergence is not as expected for linear velocity field"
 
-def test_divergence_linear_horizontal_velocity(small_grid_size, cell_size):
+def test_divergence_linear_horizontal_velocity(small_grid_size, face_masks, cell_size):
     """
     Test the divergence of a linear horizontal velocity field.
     For a linear horizontal velocity field, the divergence should be constant.
@@ -89,11 +89,11 @@ def test_divergence_linear_horizontal_velocity(small_grid_size, cell_size):
             velocity_field_v[j, i] = 0.0  # v = 0
 
     # Compute divergence
-    compute_divergence(velocity_field_u, velocity_field_v, divergence, cell_size)
+    compute_divergence(velocity_field_u, velocity_field_v, divergence, face_masks[0], face_masks[1], cell_size)
 
-    assert np.allclose(divergence[1:-1, 1:-1].tolist(), 3.0, atol=1e-6), "Divergence is not as expected for linear horizontal velocity field"
+    assert np.allclose(divergence[2:-2, 2:-2].tolist(), 3.0, atol=1e-6), "Divergence is not as expected for linear horizontal velocity field"
 
-def test_divergence_linear_vertical_velocity(small_grid_size, cell_size):
+def test_divergence_linear_vertical_velocity(small_grid_size, face_masks, cell_size):
     """
     Test the divergence of a linear vertical velocity field.
     For a linear vertical velocity field, the divergence should be constant.
@@ -116,12 +116,12 @@ def test_divergence_linear_vertical_velocity(small_grid_size, cell_size):
             velocity_field_v[j, i] = 2.0 * j  # v = y
 
     # Compute divergence
-    compute_divergence(velocity_field_u, velocity_field_v, divergence, cell_size)
+    compute_divergence(velocity_field_u, velocity_field_v, divergence, face_masks[0], face_masks[1], cell_size)
 
-    assert np.allclose(divergence[1:-1, 1:-1].tolist(), 2.0, atol=1e-6), "Divergence is not as expected for linear vertical velocity field"
+    assert np.allclose(divergence[2:-2, 2:-2].tolist(), 2.0, atol=1e-6), "Divergence is not as expected for linear vertical velocity field"
 
 
-def test_divergence_rotational_field(small_grid_size, cell_size):
+def test_divergence_rotational_field(small_grid_size, face_masks, cell_size):
     """
     Test the divergence of a rotational velocity field.
     For a rotational velocity field, the divergence should be zero.
@@ -144,11 +144,11 @@ def test_divergence_rotational_field(small_grid_size, cell_size):
             velocity_field_v[j, i] = i   # v = x
 
     # Compute divergence
-    compute_divergence(velocity_field_u, velocity_field_v, divergence, cell_size)
+    compute_divergence(velocity_field_u, velocity_field_v, divergence, face_masks[0], face_masks[1], cell_size)
 
-    assert np.allclose(divergence.tolist(), 0.0, atol=1e-6), "Divergence is not zero for rotational velocity field"
+    assert np.allclose(divergence[2:-2, 2:-2].tolist(), 0.0, atol=1e-6), "Divergence is not zero for rotational velocity field"
 
-def test_divergence_quadratic_field(small_grid_size, cell_size):
+def test_divergence_quadratic_field(small_grid_size, face_masks, cell_size):
     """
     Test the divergence of a quadratic velocity field.
     For a quadratic velocity field, the divergence should vary across the field.
@@ -171,7 +171,7 @@ def test_divergence_quadratic_field(small_grid_size, cell_size):
             velocity_field_v[j, i] = j**2  # v = y^2
 
     # Compute divergence
-    compute_divergence(velocity_field_u, velocity_field_v, divergence, cell_size)
+    compute_divergence(velocity_field_u, velocity_field_v, divergence, face_masks[0], face_masks[1], cell_size)
 
     # The expected divergence is 2*x + 2*y
     expected_divergence = np.zeros(small_grid_size, dtype=np.float32)
@@ -179,5 +179,5 @@ def test_divergence_quadratic_field(small_grid_size, cell_size):
         for i in range(width):
             expected_divergence[j, i] = 2 * i + 2 * j + 2 # The +2 accounts for the fact that the divergence is computed at cell centers, and the velocity fields are defined at faces.
 
-    assert np.allclose(divergence[1:-1, 1:-1].tolist(), expected_divergence[1:-1, 1:-1].tolist(), atol=1e-6), "Divergence is not as expected for quadratic velocity field"
+    assert np.allclose(divergence[2:-2, 2:-2].tolist(), expected_divergence[2:-2, 2:-2].tolist(), atol=1e-6), "Divergence is not as expected for quadratic velocity field"
     

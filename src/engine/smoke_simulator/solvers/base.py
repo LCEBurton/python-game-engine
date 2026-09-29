@@ -9,6 +9,8 @@ class PressureSolver(Protocol):
         self,
         pressure: np.ndarray,
         divergence: np.ndarray,
+        face_mask_u: np.ndarray,
+        face_mask_v: np.ndarray,
         fluid_density: float,
         cell_size: float,
         dt: float,

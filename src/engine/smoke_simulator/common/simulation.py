@@ -1,6 +1,6 @@
 import numpy as np
 
-from ..kernels.numba.advection import advect_scalar_field
+from ..kernels.numba.advection import advect_scalar_field, advect_velocity_u, advect_velocity_v
 from ..kernels.numba.divergence import compute_divergence
 from ..kernels.numba.forces import apply_forces, cool_temperature
 from ..kernels.numba.boundaries import enforce_boundary_conditions
@@ -78,7 +78,15 @@ class SmokeSimulation2D:
         self.divergence = np.zeros(shape, dtype=np.float32)
         
         # Solid cell mask (1 = solid, 0 = fluid)
-        self.solid_mask = np.zeros(shape, dtype=np.uint8)
+        self._solid_mask = np.zeros(shape, dtype=bool)
+        self._face_mask_u = np.zeros((height, width + 1), dtype=self._solid_mask.dtype)
+        self._face_mask_v = np.zeros((height + 1, width), dtype=self._solid_mask.dtype)
+
+        self._face_mask_u[:, 1:-1] = ~(self._solid_mask[:, :-1] | self._solid_mask[:, 1:])
+        self._face_mask_v[1:-1, :] = ~(self._solid_mask[:-1, :] | self._solid_mask[1:, :])
+        self.is_fluid = self._face_mask_u[:, :-1] | self._face_mask_u[:, 1:] | self._face_mask_v[:-1, :] | self._face_mask_v[1:, :]
+
+        self._mask_dirty = False
         
         # Create boundary walls
         self._init_boundaries()
@@ -95,10 +103,31 @@ class SmokeSimulation2D:
     
     def _init_boundaries(self):
         """Mark boundary cells as solid."""
-        self.solid_mask[0, :] = 1   # Bottom
-        self.solid_mask[-1, :] = 1  # Top
-        self.solid_mask[:, 0] = 1   # Left
-        self.solid_mask[:, -1] = 1  # Right
+        self._solid_mask[0, :] = 1   # Bottom
+        self._solid_mask[-1, :] = 1  # Top
+        self._solid_mask[:, 0] = 1   # Left
+        self._solid_mask[:, -1] = 1  # Right
+
+    def set_solid_mask(self, solid_mask):
+        """
+        Set the solid cell mask for the simulation.
+        
+        Args:
+            solid_mask: 2D array of shape (height, width) where 1 indicates solid and 0 indicates fluid.
+        """
+        if solid_mask.shape != (self.height, self.width):
+            raise ValueError(f"Solid mask must have shape ({self.height}, {self.width})")
+        self._solid_mask = solid_mask.astype(bool)
+        self._mask_dirty = True  # Mark mask as dirty for reprocessing
+
+    def get_solid_mask(self):
+        """
+        Get the current solid cell mask.
+        
+        Returns:
+            2D array of shape (height, width) where 1 indicates solid and 0 indicates fluid.
+        """
+        return self._solid_mask.copy()
     
     def add_emitter(self, emitter):
         """
@@ -139,6 +168,16 @@ class SmokeSimulation2D:
         Args:
             dt: Simulation timestep (seconds)
         """
+        # Update face masks if solid mask has changed
+        # Face_masks have convention 0: solid, 1: fluid to make calculations easier (e.g., for divergence and pressure solve)
+        # Face masks is solid if either adjacent cell is solid
+        if self._mask_dirty:
+            # interior faces
+            self._face_mask_u[:, 1:-1] = ~(self._solid_mask[:, :-1] | self._solid_mask[:, 1:])
+            self._face_mask_v[1:-1, :] = ~(self._solid_mask[:-1, :] | self._solid_mask[1:, :])
+            self.is_fluid = self._face_mask_u[:, :-1] | self._face_mask_u[:, 1:] | self._face_mask_v[:-1, :] | self._face_mask_v[1:, :]
+
+            self._mask_dirty = False
 
         # 1. Apply emitters
         with self.profiler.timing.scope("emitters"):
@@ -180,6 +219,7 @@ class SmokeSimulation2D:
         with self.profiler.timing.scope("pressure_gradient"):
             self._apply_pressure_gradient(dt)
 
+
         with self.profiler.timing.scope("divergence_after_pressure"):
             self._compute_divergence()
 
@@ -217,31 +257,27 @@ class SmokeSimulation2D:
     
     def _advect_velocity(self, dt):
         """Semi-Lagrangian advection of velocity field."""
-        advect_scalar_field(self.velocity_u, self.velocity_u_temp,
-                            self.velocity_u, self.velocity_v, dt, self.cell_size)
-        advect_scalar_field(self.velocity_v, self.velocity_v_temp,
-                            self.velocity_u, self.velocity_v, dt, self.cell_size)
+        advect_velocity_u(self.velocity_u, self.velocity_u_temp, self.velocity_v, self._face_mask_u, dt, self.cell_size)
+        advect_velocity_v(self.velocity_v, self.velocity_v_temp, self.velocity_u, self._face_mask_v, dt, self.cell_size)
         # Swap velocity fields
         self.velocity_u, self.velocity_u_temp = self.velocity_u_temp, self.velocity_u
         self.velocity_v, self.velocity_v_temp = self.velocity_v_temp, self.velocity_v
     
     def _advect_density(self, dt):
         """Semi-Lagrangian advection of density field."""
-        advect_scalar_field(self.density, self.density_temp,
-                            self.velocity_u, self.velocity_v, dt, self.cell_size)
+        advect_scalar_field(self.density, self.density_temp, self.velocity_u, self.velocity_v, self.is_fluid, dt, self.cell_size)
         # Swap density fields
         self.density, self.density_temp = self.density_temp, self.density
 
     def _advect_temperature(self, dt):
         """Semi-Lagrangian advection of temperature field."""
-        advect_scalar_field(self.temperature, self.temperature_temp,
-                            self.velocity_u, self.velocity_v, dt, self.cell_size)
+        advect_scalar_field(self.temperature, self.temperature_temp, self.velocity_u, self.velocity_v, self.is_fluid, dt, self.cell_size)
         # Swap temperature fields
         self.temperature, self.temperature_temp = self.temperature_temp, self.temperature
     
     def _compute_divergence(self):
         """Compute divergence of velocity field."""
-        compute_divergence(self.velocity_u, self.velocity_v, self.divergence, self.cell_size)
+        compute_divergence(self.velocity_u, self.velocity_v, self.divergence, self._face_mask_u, self._face_mask_v, self.cell_size)
 
     def _cool_temperature(self, dt):
         """Cool the temperature field over time."""
@@ -249,18 +285,18 @@ class SmokeSimulation2D:
     
     def _solve_pressure(self):
         """Solve for pressure using the configured solver method."""
-        self.pressure.fill(0.0)  # Reset pressure field
-        solve_pressure(self.pressure, self.divergence, self.fluid_density,
-                        self.cell_size, self.dt, self)
+        self.pressure.fill(0.0)
+        solve_pressure(self.pressure, self.divergence, self._face_mask_u, self._face_mask_v,
+                       self.fluid_density, self.cell_size, self.dt, self)
  
     def _apply_pressure_gradient(self, dt):
         """Subtract pressure gradient from velocity (projection step)."""
-        apply_pressure_gradient(self.velocity_u, self.velocity_v,
-                                self.pressure, self.fluid_density, self.cell_size, dt)
+        apply_pressure_gradient(self.velocity_u, self.velocity_v, self.pressure, self._face_mask_u, 
+                                self._face_mask_v, self.fluid_density, self.cell_size, dt)
     
     def _enforce_boundaries(self):
         """Enforce boundary conditions on velocity and density."""
-        enforce_boundary_conditions(self.velocity_u, self.velocity_v, self.solid_mask)
+        enforce_boundary_conditions(self.velocity_u, self.velocity_v, self._solid_mask)
     
     def get_density_field(self):
         """Return current density field for rendering."""

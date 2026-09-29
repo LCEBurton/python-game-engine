@@ -1,3 +1,5 @@
+import numpy as np
+
 
 class SnapshotRecorder:
     """
@@ -37,11 +39,13 @@ class SnapshotRecorder:
 
         for name, (target_frame, getter) in self._snapshots.items():
             if frame == target_frame:
-                self._values[name] = getter()
+                value = getter()
+                self._values[name] = float(value) if np.isscalar(value) else value # type: ignore
 
         for name, (target_frame, getter) in self._field_snapshots.items():
             if frame == target_frame:
-                self._fields[name] = getter().copy()
+                value = getter()
+                self._fields[name] = float(value) if np.isscalar(value) else value # type: ignore
 
     def to_dict(self) -> dict:
         # Fields are typically large arrays; exclude from JSON metrics export

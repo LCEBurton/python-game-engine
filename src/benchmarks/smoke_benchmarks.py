@@ -4,11 +4,12 @@ Benchmarks for different smoke simulation methods.
 
 from engine.smoke_simulator.common.simulation import SmokeSimulation2D
 from engine.smoke_simulator.common.emitters import Emitter2D
-from engine.smoke_simulator.solvers.params import SORParams
+from engine.smoke_simulator.solvers.params import SORParams, JacobiParams
 
 import tools.profiling.profiler_plotter as profiler_plotter
 
 import numpy as np
+import os
 
 import pprint
 
@@ -73,7 +74,7 @@ def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: 
             max_div = (m_div, tuple(map(int, np.unravel_index(sim.divergence.argmax(), sim.divergence.shape))))
 
     if solver_params is not None and isinstance(solver_params, SORParams):
-        simulation_name = f"{simulation_method} (omega={solver_params.omega})"
+        simulation_name = f"{simulation_method}_{solver_params.string()}"
     else:
         simulation_name = simulation_method
 
@@ -101,6 +102,9 @@ def run_benchmark(simulation_method: str, pressure_iterations: int, num_frames: 
     })
 
     field_snapshots[(simulation_name, pressure_iterations)] = sim.profiler.snapshots.get_field("divergence_after_pressure")
+
+    sim.profiler.export_json(os.path.join(os.getcwd(), "benchmarks", 
+                                          f"benchmark_{simulation_name}_iters_{pressure_iterations}.json"))
 
 
 def print_results_table():
@@ -147,19 +151,22 @@ def print_results_table():
 
 def main():
     simulation_methods = [
-        ("jacobi", 20, None),
-    #    ("jacobi", 40, None),
-    #    ("jacobi", 80, None),
+        ("jacobi", 20, JacobiParams()),
+        ("jacobi", 40, JacobiParams()),
+        ("jacobi", 80, JacobiParams()),
+        
     #    ("gauss_seidel", 10),
     #    ("gauss_seidel", 20),
-    #    ("red_black_gauss_seidel", 10),
+        ("rb_sor_gauss_seidel", 20, SORParams(omega=1.0)),
+        ("rb_sor_gauss_seidel", 40, SORParams(omega=1.0)),
+        ("rb_sor_gauss_seidel", 80, SORParams(omega=1.0)),
         ("rb_sor_gauss_seidel", 20, SORParams(omega=1.7)),
-    #    ("rb_sor_gauss_seidel", 40, SORParams(omega=1.7)),
-    #    ("rb_sor_gauss_seidel", 80),
-    #    ("rb_sor_gauss_seidel", 20, SORParams(omega=0.0)),  # Test with default omega
-    #    ("rb_sor_gauss_seidel", 40, SORParams(omega=0.0)),  # Test with default omega
+        ("rb_sor_gauss_seidel", 40, SORParams(omega=1.7)),
+        ("rb_sor_gauss_seidel", 80, SORParams(omega=1.7)),
+        ("rb_sor_gauss_seidel", 20, SORParams(omega=0.0)),  # Test with default omega
+        ("rb_sor_gauss_seidel", 40, SORParams(omega=0.0)),  # Test with default omega
+        ("rb_sor_gauss_seidel", 80, SORParams(omega=0.0)),  # Test with default omega
     ]
-
 
     for method, iterations, params in simulation_methods:
         run_benchmark(method, iterations, num_frames=1500, 

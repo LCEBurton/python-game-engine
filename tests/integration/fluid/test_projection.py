@@ -8,7 +8,7 @@ import numpy as np
 from engine.smoke_simulator.kernels.numba.pressure_gradient import apply_pressure_gradient
 from engine.smoke_simulator.kernels.numba.divergence import compute_divergence
 
-def test_divergence_of_pressure_gradient_quadratic(small_grid_size, fluid_density):
+def test_divergence_of_pressure_gradient_quadratic(small_grid_size, fluid_density, face_masks):
     """
     Test that the divergence of the pressure gradient of a quadratic pressure field is zero.
     This is an integration test that combines the pressure gradient and divergence computations.
@@ -26,16 +26,16 @@ def test_divergence_of_pressure_gradient_quadratic(small_grid_size, fluid_densit
     velocity_v = np.zeros((height+1, width), dtype=np.float32)
 
     # Apply the pressure gradient
-    apply_pressure_gradient(velocity_u, velocity_v, pressure, fluid_density, cell_size=1.0, dt=1.0)
+    apply_pressure_gradient(velocity_u, velocity_v, pressure, face_masks[0], face_masks[1], fluid_density, cell_size=1.0, dt=1.0)
 
     # Compute divergence of the resulting velocity field
     divergence = np.zeros(small_grid_size, dtype=np.float32)
-    compute_divergence(velocity_u, velocity_v, divergence, cell_size=1.0)
+    compute_divergence(velocity_u, velocity_v, divergence, face_masks[0], face_masks[1], cell_size=1.0)
 
     # Assert that the divergence is approximately zero everywhere
     assert np.allclose(divergence[2:-2, 2:-2], -4.0 / fluid_density, atol=1e-6), "Divergence of the pressure gradient is not zero for quadratic pressure field"
 
-def test_div_grad_matches_pressure_solver_laplacian(small_random_grid, fluid_density, cell_size):
+def test_div_grad_matches_pressure_solver_laplacian(small_random_grid, fluid_density, cell_size, face_masks):
     """
     Test that the divergence of the pressure gradient multiplied by the change in time over fluid density matches the Laplacian of the pressure field.
     This is an integration test that combines the pressure gradient and divergence computations.
@@ -51,10 +51,10 @@ def test_div_grad_matches_pressure_solver_laplacian(small_random_grid, fluid_den
     div_grad = np.zeros(small_random_grid.shape, dtype=np.float32)
 
     # Apply the pressure gradient
-    apply_pressure_gradient(u, v, pressure, fluid_density, cell_size=cell_size, dt=1.0)
+    apply_pressure_gradient(u, v, pressure, face_masks[0], face_masks[1], fluid_density, cell_size=1.0, dt=1.0)
 
     # Compute divergence of the resulting velocity field
-    compute_divergence(u, v, div_grad, cell_size)
+    compute_divergence(u, v, div_grad, face_masks[0], face_masks[1], cell_size)
 
     # Compute the Laplacian of the pressure field
     laplacian = np.zeros(small_random_grid.shape, dtype=np.float32)
@@ -80,11 +80,25 @@ def main_test():
     v = np.zeros((size, size), dtype=np.float32)
     div_grad = np.zeros((size, size), dtype=np.float32)
 
+    solid_mask = np.zeros((height, width), dtype=bool)
+    face_mask_u = np.zeros((height, width + 1), dtype=solid_mask.dtype)
+    face_mask_v = np.zeros((height + 1, width), dtype=solid_mask.dtype)
+
+    # Set the edges of the solid mask to 1 (solid)
+    solid_mask[0, :] = 1 
+    solid_mask[-1, :] = 1
+    solid_mask[:, 0] = 1 
+    solid_mask[:, -1] = 1
+
+    # Set the face masks based on the solid mask
+    face_mask_u[:, 1:-1] = ~(solid_mask[:, :-1] | solid_mask[:, 1:])
+    face_mask_v[1:-1, :] = ~(solid_mask[:-1, :] | solid_mask[1:, :])
+
     fluid_density = 1.0
     cell_size = 1.0
 
     # Apply the pressure gradient
-    apply_pressure_gradient(u, v, pressure, fluid_density, cell_size=cell_size, dt=1.0)
+    apply_pressure_gradient(u, v, pressure, face_mask_u, face_mask_v, fluid_density, cell_size=cell_size, dt=1.0)
 
     print("Velocity Field u:")
     print(u)
@@ -93,7 +107,7 @@ def main_test():
     print(v)
 
     # Compute divergence of the resulting velocity field
-    compute_divergence(u, v, div_grad, 1.0)
+    compute_divergence(u, v, div_grad, face_mask_u, face_mask_v, 1.0)
 
     print("Pressure Field:")
     print(div_grad)

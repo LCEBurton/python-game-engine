@@ -239,7 +239,7 @@ class SmokeSimulation3D:
     
     def _compute_divergence(self):
         """Compute divergence of velocity field."""
-        compute_divergence(self.velocity_u, self.velocity_v, self.divergence, self.cell_size)
+        #compute_divergence(self.velocity_u, self.velocity_v, self.divergence, self.solid_mask, self.cell_size)
 
     def _cool_temperature(self, dt):
         """Cool the temperature field over time."""
@@ -260,8 +260,8 @@ class SmokeSimulation3D:
  
     def _apply_pressure_gradient(self, dt):
         """Subtract pressure gradient from velocity (projection step)."""
-        apply_pressure_gradient(self.velocity_u, self.velocity_v,
-                                self.pressure, self.fluid_density, self.cell_size, dt)
+#        apply_pressure_gradient(self.velocity_u, self.velocity_v, 
+#                                self.pressure, self.fluid_density, self.cell_size, dt)
     
     def _enforce_boundaries(self):
         """Enforce boundary conditions on velocity and density."""

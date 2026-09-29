@@ -110,34 +110,36 @@ def sample_center_field(field: np.ndarray, x: float, y: float) -> float:
     return sample_scalar_field(field, x - 0.5, y - 0.5)
 
 @njit(parallel=True, cache=True)
-def advect_scalar_field(field_source: np.ndarray, field_dest: np.ndarray, velocity_u: np.ndarray, velocity_v: np.ndarray, dt: float, cell_size: float):
-    """Advect a cell-centered scalar field (e.g. density, temperature) using the MAC velocity field."""
+def advect_scalar_field(field_source, field_dest, velocity_u, velocity_v, is_fluid, dt, cell_size):
     height, width = field_source.shape
     inv_cell_size = 1.0 / cell_size
     for j in prange(height):
         for i in range(width):
-            # Physical position of the cell center
+            if not is_fluid[j, i]:
+                field_dest[j, i] = 0.0
+                continue
+
             px = i + 0.5
             py = j + 0.5
-
-            # Interpolate velocity at the cell center
             u = sample_u_field(velocity_u, px, py)
             v = sample_v_field(velocity_v, px, py)
-
-            # Backtrace the position
             x = px - (u * dt * inv_cell_size)
             y = py - (v * dt * inv_cell_size)
-
-            # Sample the source field at the backtraced position
             field_dest[j, i] = sample_center_field(field_source, x, y)
 
 @njit(parallel=True, cache=True)
-def advect_velocity_u(velocity_u_source: np.ndarray, velocity_u_dest: np.ndarray, velocity_v: np.ndarray, dt: float, cell_size: float):
+def advect_velocity_u(velocity_u_source: np.ndarray, velocity_u_dest: np.ndarray, velocity_v: np.ndarray, 
+                      face_mask_u: np.ndarray, dt: float, cell_size: float):
     """Advect the u-velocity face field (self-advection) using the MAC velocity field."""
     height, width_plus_1 = velocity_u_source.shape
     inv_cell_size = 1.0 / cell_size
     for j in prange(height):
         for i in range(width_plus_1):
+            # Skip advection for u-faces that are not fluid
+            if not face_mask_u[j, i]:
+                velocity_u_dest[j, i] = 0.0
+                continue
+
             # Physical position of the u-face
             px = float(i)
             py = j + 0.5
@@ -152,12 +154,18 @@ def advect_velocity_u(velocity_u_source: np.ndarray, velocity_u_dest: np.ndarray
             velocity_u_dest[j, i] = sample_u_field(velocity_u_source, x, y)
 
 @njit(parallel=True, cache=True)
-def advect_velocity_v(velocity_v_source: np.ndarray, velocity_v_dest: np.ndarray, velocity_u: np.ndarray, dt: float, cell_size: float):
+def advect_velocity_v(velocity_v_source: np.ndarray, velocity_v_dest: np.ndarray, velocity_u: np.ndarray, 
+                      face_mask_v: np.ndarray, dt: float, cell_size: float):
     """Advect the v-velocity face field (self-advection) using the MAC velocity field."""
     height_plus_1, width = velocity_v_source.shape
     inv_cell_size = 1.0 / cell_size
     for j in prange(height_plus_1):
         for i in range(width):
+            # Skip advection for u-faces that are not fluid
+            if not face_mask_v[j, i]:
+                velocity_v_dest[j, i] = 0.0
+                continue
+
             # Physical position of the v-face
             px = i + 0.5
             py = float(j)

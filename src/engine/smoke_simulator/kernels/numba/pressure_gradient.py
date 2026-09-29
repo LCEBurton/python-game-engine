@@ -2,7 +2,9 @@ import numpy as np
 from numba import njit, prange
 
 @njit(parallel=True, cache=True)
-def apply_pressure_gradient(velocity_u: np.ndarray, velocity_v: np.ndarray, pressure: np.ndarray, fluid_density: float, cell_size: float, dt: float):
+def apply_pressure_gradient(velocity_u: np.ndarray, velocity_v: np.ndarray, pressure: np.ndarray, 
+                            face_mask_u: np.ndarray, face_mask_v: np.ndarray,
+                            fluid_density: float, cell_size: float, dt: float):
     """
     Apply the pressure gradient to the velocity field.
 
@@ -14,17 +16,22 @@ def apply_pressure_gradient(velocity_u: np.ndarray, velocity_v: np.ndarray, pres
         cell_size: Physical size of each cell (meters).
         dt: Time step (seconds).
     """
+
     height, width = pressure.shape
-    scale = dt / (fluid_density * cell_size * 2)
+    scale = dt / (fluid_density * cell_size)
 
+    # u-faces: shape (height, width + 1)
     for j in prange(height):
-        for i in range(width):
-            # Compute indices for neighboring cells with clamping
-            i_left = max(i - 1, 0)
-            i_right = min(i + 1, width - 1)
-            j_down = max(j - 1, 0)
-            j_up = min(j + 1, height - 1)
+        for i in range(width + 1):
+            if face_mask_u[j, i]:
+                velocity_u[j, i] -= scale * (pressure[j, i] - pressure[j, i - 1])
+            else:
+                velocity_u[j, i] = 0.0
 
-            # Update velocity using the pressure gradient
-            velocity_u[j, i] -= scale * (pressure[j, i_right] - pressure[j, i_left])
-            velocity_v[j, i] -= scale * (pressure[j_up, i] - pressure[j_down, i])
+    # v-faces: shape (height + 1, width)
+    for j in prange(height + 1):
+        for i in range(width):
+            if face_mask_v[j, i]:
+                velocity_v[j, i] -= scale * (pressure[j, i] - pressure[j - 1, i])
+            else:
+                velocity_v[j, i] = 0.0
