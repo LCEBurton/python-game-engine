@@ -30,7 +30,7 @@ def _red_black_sor_gauss_seidel_kernel(pressure, divergence, is_fluid, face_mask
 def red_black_sor_gauss_seidel_pressure_solver(pressure: np.ndarray, divergence: np.ndarray,
                                                face_mask_u: np.ndarray, face_mask_v: np.ndarray,
                                                fluid_density: float, cell_size: float, dt: float,
-                                               iterations: int, omega: float = 0.0):
+                                               iterations: int, omega: float = 0.0, **_ignored):
     """Solve for pressure using Red-Black Gauss-Seidel with SOR."""
     height, width = pressure.shape
     alpha = calculateAlpha(cell_size, fluid_density, dt)

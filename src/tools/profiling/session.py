@@ -108,3 +108,5 @@ class ProfileSession:
         self.timing.reset()
         self.metrics.reset()
         self.snapshots.reset()
+
+

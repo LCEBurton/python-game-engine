@@ -5,17 +5,20 @@ from engine.smoke_simulator.kernels.numba.divergence import compute_divergence
 from engine.smoke_simulator.kernels.numba.pressure_gradient import apply_pressure_gradient
 from engine.smoke_simulator.solvers.dispatch import solve_pressure
 from engine.smoke_simulator.solvers.registry import SOLVER_REGISTRY
+from engine.smoke_simulator.solvers.params import DEFAULT_SOLVER_PARAMS
 from engine.smoke_simulator.kernels.numba.advection import advect_scalar_field, advect_velocity_u, advect_velocity_v
 from engine.smoke_simulator.common.simulation import SmokeSimulation2D
+from tools.profiling.session import ProfileSession
 
 
 
-class SolverParams:
+
+class FakeSim:
     """Minimal stand-in for the simulation's `params`/self object expected by solve_pressure dispatch."""
     def __init__(self, iterations=20, method="jacobi"):
         self.pressure_solver_method = method
-        self.pressure_iterations = iterations
-        self.solver_params = None
+        self.solver_params = DEFAULT_SOLVER_PARAMS[method]
+        self.profiler = ProfileSession(enabled=False)
 
 
 
@@ -40,7 +43,7 @@ def test_zero_velocity_zero_pressure_is_noop(domain, method):
     compute_divergence(velocity_u, velocity_v, divergence, face_mask_u, face_mask_v, cell_size)
     assert np.allclose(divergence, 0.0), "Divergence should be zero for zero velocity input."
 
-    params = SolverParams(method=method)
+    params = FakeSim(method=method)
     solve_pressure(pressure, divergence, face_mask_u, face_mask_v, fluid_density, cell_size, dt, params)
     assert np.allclose(pressure, 0.0), "Pressure should stay zero when divergence is zero."
 
@@ -62,7 +65,7 @@ def test_substep_zero_state_is_noop(method, iterations):
     call sites in Simulation.substep(), not a reimplementation, so it
     catches argument-order bugs at the integration layer.
     """
-    sim = SmokeSimulation2D(height=16, width=16, cell_size=1.0, pressure_solver_method=method, pressure_iterations=iterations)
+    sim = SmokeSimulation2D(height=16, width=16, cell_size=1.0, solver_method=method)
 
     sim.substep(sim.dt)
 
@@ -81,7 +84,7 @@ def test_substep_single_impulse_reduces_divergence(method, iterations):
     This is the test that would have caught the real regression: it runs
     the actual Simulation.substep() call chain end-to-end.
     """
-    sim = SmokeSimulation2D(height=16, width=16, cell_size=1.0, pressure_solver_method=method, pressure_iterations=iterations)
+    sim = SmokeSimulation2D(height=16, width=16, cell_size=1.0, solver_method=method)
 
     sim.velocity_u[8, 8] = 1.0
 

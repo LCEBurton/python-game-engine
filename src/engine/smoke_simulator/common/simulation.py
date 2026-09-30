@@ -7,6 +7,7 @@ from ..kernels.numba.boundaries import enforce_boundary_conditions
 from ..kernels.numba.pressure_gradient import apply_pressure_gradient
 
 from ..solvers.dispatch import solve_pressure
+from ..solvers.params import DEFAULT_SOLVER_PARAMS
 
 from tools.profiling import ProfileSession
 
@@ -16,7 +17,7 @@ class SmokeSimulation2D:
     and pressure projection for incompressibility.
     """
 
-    def __init__(self, width=128, height=128, cell_size=1.0, pressure_solver_method='jacobi', pressure_iterations=40, 
+    def __init__(self, width=128, height=128, cell_size=1.0, solver_method='jacobi', 
                  solver_params = None, debug=False):
         """
         Initialize the 2D smoke simulation grid.
@@ -29,8 +30,8 @@ class SmokeSimulation2D:
         self.width = width
         self.height = height
         self.cell_size = cell_size
-        self.pressure_solver_method = pressure_solver_method
-        self.solver_params = solver_params
+        self.pressure_solver_method = solver_method
+        self.solver_params = solver_params if solver_params is not None else DEFAULT_SOLVER_PARAMS[solver_method]
         
         # Physical domain size
         self.domain_width = width * cell_size
@@ -42,7 +43,6 @@ class SmokeSimulation2D:
         self.max_substeps = 4
         
         # Solver parameters
-        self.pressure_iterations = pressure_iterations
         self.density_dissipation = 0.999  # Slight fade per substep
         self.buoyancy = 5.0
         self.gravity = -0.5

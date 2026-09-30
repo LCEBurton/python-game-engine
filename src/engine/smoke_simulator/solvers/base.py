@@ -14,7 +14,6 @@ class PressureSolver(Protocol):
         fluid_density: float,
         cell_size: float,
         dt: float,
-        iterations: int,
         **solver_kwargs,
     ) -> None:
         ...
