@@ -57,7 +57,7 @@ def run_benchmark(simulation_method: str, num_frames: int, solver_params: Solver
 
     # Register a snapshot of peak divergence near the emitter at a fixed frame,
     # so results are directly comparable across different pressure_iterations.
-    snapshot_frame = 1000
+    snapshot_frame = num_frames // 2
     window = int(emitter.radius)
     emitter_j, emitter_i = int(emitter.position[0]), int(emitter.position[1])
 
