@@ -1,0 +1,83 @@
+{
+	"name": "Test Suite",
+	"schema_version": "0.1",
+	"type": "suite",
+	"benchmark": {
+		"simulation": {
+			"grid": {
+				"size": [[16, 16]],
+				"cell_size": [1.0]
+			},
+			"pressure_solver": {
+				"method": {
+					"jacobi" : {
+						"params": [
+							{ 
+								"iterations": 20 
+							}, 
+							{ 
+								"iterations": 50 
+							}
+						]
+					}
+				},
+				"backend": ["numba"]
+			},
+			"operators": {
+				"advection": ["numba"],
+				"boundaries": ["numba"],
+				"divergence": ["numba"],
+				"forces": ["numba"],
+				"pressure_gradient": ["numba"],
+				"residual": ["numba"]
+			}
+		},
+		"emitters": [
+			{
+				"position": [8, 8],
+				"radius": 2,
+				"density_value": 1.0,
+				"temperature_value": 1.0,
+				"velocity_value": [0, -2],
+				"approach": "gaussian",
+				"numba_optimized": true
+			}
+		],
+		"run": {
+			"frames": [10, 20],
+			"warmup_frames": [2],
+			"repetitions": [3]
+		},
+		"profiling": {
+			"timings": ["simulation.substep", "simulation.pressure.solve"],
+			"metrics": {
+				"fields": [
+					{
+						"source": "divergence",
+						"stages": ["before_projection", "after_projection"],
+						"reducers": ["rms", "mean", "max"],
+						"scopes": ["all", "interior"],
+						"every": 5
+					},
+					{
+						"source": "velocity_u",
+						"stages": [],
+						"reducers": ["max"],
+						"scopes": ["all"],
+						"every": 5
+					},
+					{
+						"source": "pressure_residual",
+						"stages": ["final"],
+						"reducers": ["rms", "mean", "max"],
+						"scopes": ["all"],
+						"every": 5
+					}
+				],
+				"scalars": []
+			},
+			"snapshots": []
+		}
+	}
+}
+

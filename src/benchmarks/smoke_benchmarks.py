@@ -2,9 +2,9 @@
 Benchmarks for different smoke simulation methods.
 """
 
-from engine.smoke_simulator.common.simulation import SmokeSimulation2D
-from engine.smoke_simulator.common.emitters import Emitter2D
-from engine.smoke_simulator.solvers.params import (
+from cfd.common.simulation import SmokeSimulation2D
+from cfd.common.emitters import Emitter2D
+from cfd.solvers.params import (
         SolverParams, 
         DEFAULT_SOLVER_PARAMS, 
         SORParams, 
@@ -13,7 +13,7 @@ from engine.smoke_simulator.solvers.params import (
         GaussSeidelParams
 )
 
-import tools.profiling.profiler_plotter as profiler_plotter
+import cfd.profiling.profiler_plotter as profiler_plotter
 
 import numpy as np
 import os
@@ -40,9 +40,8 @@ def run_benchmark(simulation_method: str, num_frames: int, solver_params: Solver
     if solver_params is None:
         solver_params = DEFAULT_SOLVER_PARAMS[simulation_method]
 
-    sim = SmokeSimulation2D(width=512, height=512, cell_size=1.0,
-                             solver_method=simulation_method, 
-                             solver_params=solver_params, debug=True)
+    sim = SmokeSimulation2D(grid_size=(512, 512), cell_size=1.0,
+                             method=simulation_method, solver_params=solver_params, debug=True)
 
     emitter = Emitter2D(position=(sim.domain_width / 2, sim.domain_height / 2),
                          radius=15.0,

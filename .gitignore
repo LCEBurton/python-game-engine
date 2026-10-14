@@ -15,10 +15,12 @@ dist/
 .coverage
 htmlcov/
 
-# local benchmarks
-benchmarks/
+# local benchmarks results
+benchmarks/results/
 
 # Local environment
 .env
 .env.*
 
+# Random files
+.rough/

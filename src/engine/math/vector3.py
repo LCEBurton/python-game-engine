@@ -134,6 +134,10 @@ class Vector3:
         self.x /= mag
         self.y /= mag
         self.z /= mag
+
+    def length(self) -> float:
+        """Return the length (magnitude) of the vector."""
+        return self.magnitude()
     
     def to_list(self) -> List[float]:
         """Convert to list [x, y, z]."""
@@ -146,3 +150,9 @@ class Vector3:
     def copy(self) -> 'Vector3':
         """Create a copy of this vector."""
         return Vector3(self.x, self.y, self.z)
+
+    @staticmethod
+    def zero():
+        """Return a zero vector."""
+        return Vector3(0, 0, 0)
+    

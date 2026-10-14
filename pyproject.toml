@@ -26,6 +26,9 @@ dev = [
     "mypy>=1.0",
 ]
 
+[project.scripts]
+cfd-bench = "cfd.benchmarking.cli:main"
+
 # Documentation dependencies
 #docs = [
 #    "sphinx>=7.0",
@@ -58,7 +61,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "--verbose --cov=src/engine --cov-report=html --cov-report=term"
+addopts = "--verbose --cov=src/cfd --cov-report=html --cov-report=term"
 env = [
     "NUMBA_DISABLE_JIT=1"
 ]
